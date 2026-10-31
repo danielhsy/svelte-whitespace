@@ -48,9 +48,8 @@ export function applyRule(content: string, options: ResolvedOptions): MagicStrin
 	const code = new MagicString(content);
 	for (const gap of analyse(content, options)) {
 		if (gap.passthrough || gap.start === gap.end) continue;
-		const atEdge = gap.left === 'edges' || gap.right === 'edges';
 		if (gap.renders === '') code.remove(gap.start, gap.end);
-		else if (atEdge) code.overwrite(gap.start, gap.end, "{' '}");
+		else if (gap.edge) code.overwrite(gap.start, gap.end, "{' '}");
 		else if (content.slice(gap.start, gap.end) !== ' ') code.overwrite(gap.start, gap.end, ' ');
 	}
 	return code;

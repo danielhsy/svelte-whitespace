@@ -2,7 +2,13 @@
 // under the configured options.
 
 import MagicString from 'magic-string';
-import { analyse, resolveOptions, type ResolvedOptions } from '../rule/index.js';
+import { parse, type AST } from 'svelte/compiler';
+import {
+	analyse,
+	blankScriptsAndStyles,
+	resolveOptions,
+	type ResolvedOptions
+} from '../rule/index.js';
 
 const SVELTE = resolveOptions({ preset: 'svelte' });
 
@@ -25,4 +31,30 @@ export function migrate(source: string, options: ResolvedOptions, quote: "'" | '
 		else code.prependLeft(gap.start, `{${quote} ${quote}}`);
 	}
 	return code.toString();
+}
+
+/**
+ * Whether a file looks migrated already: it has a `{' '}` before whitespace with a line break.
+ * That's how migrate and the Prettier plugin write a kept space, and it means the file follows
+ * the configured rule, not Svelte's, so migrating it again would add a second space.
+ */
+export function looksMigrated(source: string): boolean {
+	const visit = (fragment: AST.Fragment): boolean =>
+		fragment.nodes.some((node, i) => {
+			const next = fragment.nodes[i + 1];
+			if (
+				node.type === 'ExpressionTag' &&
+				node.expression.type === 'Literal' &&
+				node.expression.value === ' ' &&
+				next?.type === 'Text' &&
+				/^[ \t]*[\r\n]/.test(next.data)
+			) {
+				return true;
+			}
+			return Object.values(node).some(
+				(value) =>
+					typeof value === 'object' && value?.type === 'Fragment' && visit(value as AST.Fragment)
+			);
+		});
+	return visit(parse(blankScriptsAndStyles(source), { modern: true }).fragment);
 }

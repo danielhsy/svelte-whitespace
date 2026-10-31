@@ -7,15 +7,18 @@ import { join, relative } from 'node:path';
 import { isIncluded } from '../preprocess/index.js';
 import { loadOptions } from '../prettier/config.js';
 import { checkFile, quoteFor } from './check.js';
-import { migrate } from './migrate.js';
+import { looksMigrated, migrate } from './migrate.js';
 
 const files = (n: number) => `${n} ${n === 1 ? 'file' : 'files'}`;
 
 const USAGE = `Usage: svelte-whitespace <command> [files or folders…]
 
 Commands:
-  migrate [--dry-run]  rewrite files so they render the same under the configured rule
-  check                check that formatting doesn't change what the rule renders
+  migrate [--dry-run] [--force]
+          rewrite files written for Svelte's own rule so they render the same under the
+          configured rule; run it once, before formatting with the plugin. Files that look
+          migrated already are skipped unless --force is given.
+  check   check that formatting doesn't change what the rule renders
 
 Folders are searched for .svelte files; the default is the current folder. Options are read
 from svelte.config.js, as the Prettier plugin reads them.`;
@@ -23,6 +26,7 @@ from svelte.config.js, as the Prettier plugin reads them.`;
 const args = process.argv.slice(2);
 const command = args[0];
 const dryRun = args.includes('--dry-run');
+const force = args.includes('--force');
 const paths = args.slice(1).filter((arg) => !arg.startsWith('--'));
 
 /** Expands folders into the .svelte files the preprocessor would process. */
@@ -44,8 +48,13 @@ async function svelteFiles(paths: string[]): Promise<string[]> {
 async function runMigrate() {
 	const list = await svelteFiles(paths);
 	let changed = 0;
+	const skipped: string[] = [];
 	for (const file of list) {
 		const source = await readFile(file, 'utf8');
+		if (!force && looksMigrated(source)) {
+			skipped.push(relative('.', file));
+			continue;
+		}
 		const migrated = migrate(source, await loadOptions(file), await quoteFor(file));
 		if (migrated === source) continue;
 		changed++;
@@ -62,9 +71,19 @@ async function runMigrate() {
 			if (line !== after[i]) console.log(`${i + 1}\n- ${line}\n+ ${after[i]}`);
 		});
 	}
+	if (skipped.length) {
+		console.warn(
+			`\nWarning: skipped ${files(skipped.length)} that look migrated already, with {' '} before a line break:`
+		);
+		for (const file of skipped) console.warn(`  ${file}`);
+		console.warn('Migrating them again would add a second space. Use --force to include them.');
+	}
 	const verb = dryRun ? 'would change' : 'changed';
 	console.log(`\n${changed} of ${files(list.length)} ${verb}.`);
 	if (!dryRun && changed > 0) console.log('Run Prettier afterwards to tidy the layout.');
+	console.log(
+		"migrate is for files written for Svelte's own rule: run it once, before formatting with the plugin."
+	);
 }
 
 async function runCheck() {

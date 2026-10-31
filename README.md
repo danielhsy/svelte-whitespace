@@ -63,7 +63,7 @@ A comment before an element or block switches the rule for everything inside it:
 
 ## Commands
 
-- `npx svelte-whitespace migrate [--dry-run] [files or folders]` rewrites existing components so they render the same under the configured rule, adding `{' '}` where a space would otherwise disappear. Run Prettier afterwards.
+- `npx svelte-whitespace migrate [--dry-run] [files or folders]` rewrites existing components so they render the same under the configured rule, adding `{' '}` where a space would otherwise disappear. Run it once, then run Prettier.
 - `npx svelte-whitespace check [files or folders]` formats each file in memory and confirms that nothing renders differently. It exits with an error if something would, which is useful in CI.
 
 ## Credits

@@ -28,6 +28,8 @@ A gap between two words always renders as one space, whatever it contains, so li
 
 No behaviour adds spaces that do not exist in the source.
 
+Svelte removes comments, `{@const}`, `{@debug}`, `{#snippet}`, `<svelte:head>`, `<svelte:window>`, `<svelte:body>`, `<svelte:document>` and `<title>` from the content before it handles whitespace, so for example the space in `<p><!-- c --> <b>x</b></p>` is trimmed.
+
 ### Kinds
 
 The behaviour comes from what is on each side of the gap:
@@ -125,11 +127,13 @@ The contents of `<pre>`, `<textarea>`, `<script>` and `<style>` are not changed,
 
 ## Commands
 
-### `svelte-whitespace migrate [--dry-run] [files or folders]`
+### `svelte-whitespace migrate [--dry-run] [--force] [files or folders]`
 
 Rewrites components written for Svelte’s own rule so they render the same under the configured rule. It adds `{' '}` and removes spaces as necessary. Whitespace next to block-level elements is left unchanged.
 
 `--dry-run` shows the changes without writing them. Run Prettier afterwards to tidy the layout.
+
+Run it once, before formatting with the plugin. **Do not run it again** or it would add spaces that weren’t there. Because they look migrated, files with a `{' '}` before a line break are therefore skipped with a warning unless `--force` is given.
 
 ### `svelte-whitespace check [files or folders]`
 

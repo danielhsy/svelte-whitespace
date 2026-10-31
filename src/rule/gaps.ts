@@ -31,6 +31,21 @@ export interface Gap {
 	renders: ' ' | '';
 	/** True if the gap is in a region left to Svelte (the `svelte` preset without overrides). */
 	passthrough: boolean;
+	/**
+	 * True if Svelte trims this gap as part of an edge: it touches the start or end of its
+	 * content, directly or across nodes Svelte drops. A space kept here must be written `{' '}`.
+	 */
+	edge: boolean;
+}
+
+/** A gap while its fragment is analysed, with what Svelte drops on either side. */
+interface Entry {
+	gap: Gap;
+	settings: Settings;
+	hasBreak: boolean;
+	/** Whether the node on each side is one Svelte drops before trimming (see DROPPED). */
+	leftDropped: boolean;
+	rightDropped: boolean;
 }
 
 /** The settings in force for one content area. */
@@ -40,12 +55,29 @@ interface Settings {
 }
 
 const RAW_ELEMENTS = new Set(['pre', 'textarea', 'script', 'style']);
+
+/**
+ * Nodes Svelte takes out of a fragment before it trims and collapses whitespace (`clean_nodes`
+ * in the compiler): comments, and tags it hoists. The whitespace on either side then meets.
+ */
+const DROPPED = new Set([
+	'Comment',
+	'ConstTag',
+	'DebugTag',
+	'SvelteHead',
+	'SvelteWindow',
+	'SvelteBody',
+	'SvelteDocument',
+	'TitleElement',
+	'SnippetBlock'
+]);
 const WHITESPACE = /[ \t\r\n]+/g;
 const LINE_BREAK = /[\r\n]/;
 
 export function analyse(source: string, options: ResolvedOptions): Gap[] {
 	const root = parse(blankScriptsAndStyles(source), { modern: true });
 	const gaps: Gap[] = [];
+	let entries: Entry[] = [];
 
 	const kindOf = (node: AST.TemplateNode): Kind => {
 		switch (node.type) {
@@ -86,7 +118,15 @@ export function analyse(source: string, options: ResolvedOptions): Gap[] {
 	const behaviourOf = (side: Side, settings: Settings): Behaviour | null =>
 		side === 'word' ? null : settings.spaces[side];
 
-	const addGap = (start: number, end: number, left: Side, right: Side, settings: Settings) => {
+	const addGap = (
+		start: number,
+		end: number,
+		left: Side,
+		right: Side,
+		settings: Settings,
+		leftDropped = false,
+		rightDropped = false
+	) => {
 		const leftBehaviour = behaviourOf(left, settings);
 		const rightBehaviour = behaviourOf(right, settings);
 		const sides = [leftBehaviour, rightBehaviour].filter(
@@ -94,28 +134,42 @@ export function analyse(source: string, options: ResolvedOptions): Gap[] {
 		);
 		const behaviour = sides.length ? sides.reduce(strictest) : null;
 		const hasBreak = LINE_BREAK.test(source.slice(start, end));
-		// SPEC §3.1: no behaviour adds a space where the source has none.
-		const keeps =
-			start < end &&
-			(behaviour === null || behaviour === 'always' || (behaviour === 'same-line' && !hasBreak));
-		gaps.push({
-			start,
-			end,
-			left,
-			right,
-			behaviour,
-			leftBehaviour,
-			rightBehaviour,
-			renders: keeps ? ' ' : '',
-			passthrough: settings.passthrough
+		entries.push({
+			gap: {
+				start,
+				end,
+				left,
+				right,
+				behaviour,
+				leftBehaviour,
+				rightBehaviour,
+				renders: keeps(start, end, behaviour, hasBreak) ? ' ' : '',
+				passthrough: settings.passthrough,
+				edge: left === 'edges' || right === 'edges'
+			},
+			settings,
+			hasBreak,
+			leftDropped,
+			rightDropped
 		});
 	};
 
-	const visitText = (text: AST.Text, left: Side, right: Side, settings: Settings) => {
+	const visitText = (
+		text: AST.Text,
+		left: Side,
+		right: Side,
+		settings: Settings,
+		leftDropped: boolean,
+		rightDropped: boolean
+	) => {
 		const raw = source.slice(text.start, text.end);
 		// Text touching its neighbours with no whitespace still makes a gap, an empty one.
-		if (!/^[ \t\r\n]/.test(raw)) addGap(text.start, text.start, left, 'word', settings);
-		if (!/[ \t\r\n]$/.test(raw)) addGap(text.end, text.end, 'word', right, settings);
+		if (!/^[ \t\r\n]/.test(raw)) {
+			addGap(text.start, text.start, left, 'word', settings, leftDropped);
+		}
+		if (!/[ \t\r\n]$/.test(raw)) {
+			addGap(text.end, text.end, 'word', right, settings, false, rightDropped);
+		}
 		for (const match of raw.matchAll(WHITESPACE)) {
 			const start = text.start + match.index;
 			const end = start + match[0].length;
@@ -124,24 +178,39 @@ export function analyse(source: string, options: ResolvedOptions): Gap[] {
 				end,
 				start === text.start ? left : 'word',
 				end === text.end ? right : 'word',
-				settings
+				settings,
+				start === text.start && leftDropped,
+				end === text.end && rightDropped
 			);
 		}
 	};
 
 	const visitFragment = (fragment: AST.Fragment, settings: Settings) => {
 		const { nodes } = fragment;
+		const outer = entries;
+		entries = [];
 		let pending: Directive | null = null;
 
 		nodes.forEach((node, i) => {
 			// Empty gaps where a non-text node touches an edge or another non-text node.
 			if (node.type !== 'Text') {
 				const previous = nodes[i - 1];
-				if (!previous) addGap(node.start, node.start, 'edges', kindOf(node), settings);
-				else if (previous.type !== 'Text') {
-					addGap(node.start, node.start, kindOf(previous), kindOf(node), settings);
+				if (!previous) {
+					addGap(node.start, node.start, 'edges', kindOf(node), settings, false, dropped(node));
+				} else if (previous.type !== 'Text') {
+					addGap(
+						node.start,
+						node.start,
+						kindOf(previous),
+						kindOf(node),
+						settings,
+						dropped(previous),
+						dropped(node)
+					);
 				}
-				if (i === nodes.length - 1) addGap(node.end, node.end, kindOf(node), 'edges', settings);
+				if (i === nodes.length - 1) {
+					addGap(node.end, node.end, kindOf(node), 'edges', settings, dropped(node));
+				}
 			}
 
 			if (node.type === 'Text') {
@@ -151,7 +220,10 @@ export function analyse(source: string, options: ResolvedOptions): Gap[] {
 					node,
 					previous ? kindOf(previous) : 'edges',
 					next ? kindOf(next) : 'edges',
-					settings
+					settings,
+					// Two adjacent text nodes: what was between them has been taken out.
+					!!previous && (dropped(previous) || previous.type === 'Text'),
+					!!next && (dropped(next) || next.type === 'Text')
 				);
 				return;
 			}
@@ -166,6 +238,9 @@ export function analyse(source: string, options: ResolvedOptions): Gap[] {
 			if (node.type === 'RegularElement' && RAW_ELEMENTS.has(node.name.toLowerCase())) return;
 			for (const child of childFragments(node)) visitFragment(child, inner);
 		});
+
+		gaps.push(...joinAcrossDropped(entries));
+		entries = outer;
 	};
 
 	const fileDirectives = findFileDirectives(root.fragment);
@@ -183,6 +258,45 @@ export function analyse(source: string, options: ResolvedOptions): Gap[] {
 				}
 	);
 	return gaps;
+}
+
+const dropped = (node: AST.TemplateNode): boolean => DROPPED.has(node.type);
+
+/** SPEC §3.1: no behaviour adds a space where the source has none. */
+function keeps(start: number, end: number, behaviour: Behaviour | null, hasBreak: boolean) {
+	return (
+		start < end &&
+		(behaviour === null || behaviour === 'always' || (behaviour === 'same-line' && !hasBreak))
+	);
+}
+
+/**
+ * Svelte drops comments and hoisted tags before trimming, so the gaps on either side of them
+ * meet and render as one: a single space if any of them renders one, and nothing at an edge.
+ * Gaps in a run like that which reaches an edge are also subject to the `edges` behaviour, and at
+ * most one of them renders the space.
+ */
+function joinAcrossDropped(entries: Entry[]): Gap[] {
+	entries.sort((a, b) => a.gap.start - b.gap.start || a.gap.end - b.gap.end);
+	for (let i = 0; i < entries.length; ) {
+		let j = i + 1;
+		while (j < entries.length && entries[j - 1]!.rightDropped && entries[j]!.leftDropped) j++;
+		const run = entries.slice(i, j);
+		i = j;
+		if (run.length === 1) continue;
+
+		const edge = run[0]!.gap.left === 'edges' || run.at(-1)!.gap.right === 'edges';
+		for (const { gap, settings, hasBreak } of run) {
+			gap.edge = edge;
+			if (!edge) continue;
+			const edges = settings.spaces.edges;
+			gap.behaviour = gap.behaviour === null ? edges : strictest(gap.behaviour, edges);
+			gap.renders = keeps(gap.start, gap.end, gap.behaviour, hasBreak) ? ' ' : '';
+		}
+		const kept = run.find(({ gap }) => gap.renders === ' ');
+		for (const { gap } of run) if (gap !== kept?.gap) gap.renders = '';
+	}
+	return entries.map(({ gap }) => gap);
 }
 
 function settingsFrom(directive: Directive): Settings {

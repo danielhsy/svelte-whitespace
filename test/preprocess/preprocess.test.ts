@@ -4,7 +4,12 @@ import { describe, expect, it } from 'vitest';
 import { svelteWhitespace } from '../../src/preprocess/index.js';
 import type { Options } from '../../src/rule/index.js';
 
-async function run(source: string, options: Options = {}, filename = '/project/src/A.svelte') {
+// Most of these tests are about jsx behaviour, so it's their default here.
+async function run(
+	source: string,
+	options: Options = { preset: 'jsx' },
+	filename = '/project/src/A.svelte'
+) {
 	return preprocess(source, svelteWhitespace(options), { filename });
 }
 

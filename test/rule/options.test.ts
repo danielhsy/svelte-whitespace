@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { KINDS, PRESETS, resolveOptions, strictest, type Options } from '../../src/rule/index.js';
 
 describe('resolveOptions', () => {
-	it('defaults to the jsx preset and excludes node_modules', () => {
+	it('defaults to the display preset and excludes node_modules', () => {
 		const resolved = resolveOptions();
-		expect(resolved.preset).toBe('jsx');
-		expect(resolved.spaces).toEqual(PRESETS.jsx);
+		expect(resolved.preset).toBe('display');
+		expect(resolved.spaces).toEqual(PRESETS.display);
 		expect(resolved.exclude).toEqual(['**/node_modules/**']);
 	});
 

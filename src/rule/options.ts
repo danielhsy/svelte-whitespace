@@ -20,7 +20,7 @@ export type Spaces = Record<Kind, Behaviour>;
 export const PRESET_NAMES = ['jsx', 'display', 'svelte'] as const;
 export type PresetName = (typeof PRESET_NAMES)[number];
 
-/** SPEC §5.2. Each preset builds on the one before: svelte → display → jsx. */
+/** SPEC §5.2. Each preset builds on the one before: svelte → display → jsx. `display` is the default. */
 export const PRESETS: Record<PresetName, Spaces> = {
 	jsx: {
 		inline: 'same-line',
@@ -80,7 +80,7 @@ const CLASSIFICATIONS: readonly Classification[] = ['inline', 'block'];
 
 /** Validates user options (they come from plain JavaScript config) and fills in defaults. */
 export function resolveOptions(options: Options = {}): ResolvedOptions {
-	const preset = options.preset ?? 'jsx';
+	const preset = options.preset ?? 'display';
 	if (!PRESET_NAMES.includes(preset)) {
 		throw new Error(
 			`svelte-whitespace: unknown preset ${JSON.stringify(preset)}; expected one of ${PRESET_NAMES.join(', ')}`

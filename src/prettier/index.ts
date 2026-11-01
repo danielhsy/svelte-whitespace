@@ -1,27 +1,46 @@
-// The Prettier plugin (SPEC §8). For now it takes over prettier-plugin-svelte's printer and
-// delegates every node back to it, which is the mechanism the markup printer will build on.
-//
-// Prettier uses the printer from the plugin whose parser it chose, so we must re-export the
-// parser as well as supplying the printer; a printer on its own is silently ignored.
+// The Prettier plugin (SPEC §8). Prettier uses the printer from the plugin whose parser it chose,
+// so we re-export prettier-plugin-svelte's parser (wrapped, to run the rule once per file) as well
+// as supplying our own printer; a printer on its own is silently ignored.
 
-import type { Plugin, Printer } from 'prettier';
+import type { ParserOptions, Plugin, Printer } from 'prettier';
+import { resolveOptions, type Options, type ResolvedOptions } from '../rule/index.js';
+import { loadOptions } from './config.js';
+import type { Node } from './derived.js';
+import { attachState, print } from './printer.js';
 import { upstream } from './upstream.js';
 
-const upstreamPrinter = upstream.printers['svelte-ast'];
+function createPluginFrom(
+	getOptions: (options: ParserOptions) => ResolvedOptions | Promise<ResolvedOptions>
+) {
+	const upstreamParser = upstream.parsers.svelte;
+	const printer: Printer = { ...upstream.printers['svelte-ast'], print };
+	return {
+		languages: upstream.languages,
+		options: upstream.options,
+		parsers: {
+			// Upstream also registers parsers it uses internally to format expressions.
+			...upstream.parsers,
+			svelte: {
+				...upstreamParser,
+				async parse(text: string, options: ParserOptions) {
+					const root = (await upstreamParser.parse(text, options)) as Node;
+					attachState(root, text, await getOptions(options));
+					return root;
+				}
+			}
+		},
+		printers: { 'svelte-ast': printer }
+	} satisfies Plugin;
+}
 
-const printer: Printer = {
-	...upstreamPrinter,
-	print(path, options, print, args) {
-		return upstreamPrinter.print(path, options, print, args);
-	}
-};
+/** A plugin with fixed options, for formatting without a svelte.config.js. */
+export function createPlugin(options: Options = {}) {
+	const resolved = resolveOptions(options);
+	return createPluginFrom(() => resolved);
+}
 
-const plugin = {
-	languages: upstream.languages,
-	options: upstream.options,
-	parsers: { svelte: upstream.parsers.svelte },
-	printers: { 'svelte-ast': printer }
-} satisfies Plugin;
+/** The plugin for Prettier config files: reads its options from svelte.config.js. */
+const plugin = createPluginFrom((options) => loadOptions(options.filepath));
 
 export default plugin;
 export const { languages, options, parsers, printers } = plugin;

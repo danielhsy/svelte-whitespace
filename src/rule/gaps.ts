@@ -17,13 +17,16 @@ import {
 export type Side = Kind | 'word';
 
 export interface Gap {
-	/** The whitespace's range in the source. */
+	/** The whitespace's range in the source. Equal for an empty gap, where two things touch. */
 	start: number;
 	end: number;
 	left: Side;
 	right: Side;
 	/** Null for a gap between two words, which always renders one space. */
 	behaviour: Behaviour | null;
+	/** Each side's own behaviour (null for a word), before combining. */
+	leftBehaviour: Behaviour | null;
+	rightBehaviour: Behaviour | null;
 	/** What the gap renders: one space or nothing. */
 	renders: ' ' | '';
 	/** True if the gap is in a region left to Svelte (the `svelte` preset without overrides). */
@@ -84,19 +87,25 @@ export function analyse(source: string, options: ResolvedOptions): Gap[] {
 		side === 'word' ? null : settings.spaces[side];
 
 	const addGap = (start: number, end: number, left: Side, right: Side, settings: Settings) => {
-		const sides = [behaviourOf(left, settings), behaviourOf(right, settings)].filter(
+		const leftBehaviour = behaviourOf(left, settings);
+		const rightBehaviour = behaviourOf(right, settings);
+		const sides = [leftBehaviour, rightBehaviour].filter(
 			(behaviour): behaviour is Behaviour => behaviour !== null
 		);
 		const behaviour = sides.length ? sides.reduce(strictest) : null;
 		const hasBreak = LINE_BREAK.test(source.slice(start, end));
+		// SPEC §3.1: no behaviour adds a space where the source has none.
 		const keeps =
-			behaviour === null || behaviour === 'always' || (behaviour === 'same-line' && !hasBreak);
+			start < end &&
+			(behaviour === null || behaviour === 'always' || (behaviour === 'same-line' && !hasBreak));
 		gaps.push({
 			start,
 			end,
 			left,
 			right,
 			behaviour,
+			leftBehaviour,
+			rightBehaviour,
 			renders: keeps ? ' ' : '',
 			passthrough: settings.passthrough
 		});
@@ -104,6 +113,9 @@ export function analyse(source: string, options: ResolvedOptions): Gap[] {
 
 	const visitText = (text: AST.Text, left: Side, right: Side, settings: Settings) => {
 		const raw = source.slice(text.start, text.end);
+		// Text touching its neighbours with no whitespace still makes a gap, an empty one.
+		if (!/^[ \t\r\n]/.test(raw)) addGap(text.start, text.start, left, 'word', settings);
+		if (!/[ \t\r\n]$/.test(raw)) addGap(text.end, text.end, 'word', right, settings);
 		for (const match of raw.matchAll(WHITESPACE)) {
 			const start = text.start + match.index;
 			const end = start + match[0].length;
@@ -122,6 +134,16 @@ export function analyse(source: string, options: ResolvedOptions): Gap[] {
 		let pending: Directive | null = null;
 
 		nodes.forEach((node, i) => {
+			// Empty gaps where a non-text node touches an edge or another non-text node.
+			if (node.type !== 'Text') {
+				const previous = nodes[i - 1];
+				if (!previous) addGap(node.start, node.start, 'edges', kindOf(node), settings);
+				else if (previous.type !== 'Text') {
+					addGap(node.start, node.start, kindOf(previous), kindOf(node), settings);
+				}
+				if (i === nodes.length - 1) addGap(node.end, node.end, kindOf(node), 'edges', settings);
+			}
+
 			if (node.type === 'Text') {
 				const previous = nodes[i - 1];
 				const next = nodes[i + 1];
@@ -199,7 +221,7 @@ function findFileDirectives(fragment: AST.Fragment): Directive[] {
  * every position the same. The markup preprocessor can run before TypeScript or a CSS
  * preprocessor, so their contents may not be something Svelte's parser accepts.
  */
-function blankScriptsAndStyles(source: string): string {
+export function blankScriptsAndStyles(source: string): string {
 	return source.replace(
 		/(<(script|style)\b[^>]*>)([^]*?)(<\/\2\s*>)/gi,
 		(_, open: string, _name, body: string, close: string) =>

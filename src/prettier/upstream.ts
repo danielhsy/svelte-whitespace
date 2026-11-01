@@ -7,7 +7,7 @@ import * as untyped from 'prettier-plugin-svelte';
 export interface UpstreamPlugin extends Plugin {
 	languages: SupportLanguage[];
 	options: SupportOptions;
-	parsers: { svelte: Parser };
+	parsers: { svelte: Parser } & Record<string, Parser>;
 	printers: { 'svelte-ast': Printer };
 }
 

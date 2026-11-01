@@ -48,7 +48,7 @@ export function svelteWhitespace(options: Options = {}): SvelteWhitespacePreproc
 export function applyRule(content: string, options: ResolvedOptions): MagicString {
 	const code = new MagicString(content);
 	for (const gap of analyse(content, options)) {
-		if (gap.passthrough) continue;
+		if (gap.passthrough || gap.start === gap.end) continue;
 		const atEdge = gap.left === 'edges' || gap.right === 'edges';
 		if (gap.renders === '') code.remove(gap.start, gap.end);
 		else if (atEdge) code.overwrite(gap.start, gap.end, "{' '}");

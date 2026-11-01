@@ -20,13 +20,12 @@ export interface SvelteWhitespacePreprocessor extends PreprocessorGroup {
 
 export function svelteWhitespace(options: Options = {}): SvelteWhitespacePreprocessor {
 	const resolved = resolveOptions(options);
-	const isIncluded = fileFilter(resolved);
 
 	return {
 		name: 'svelte-whitespace',
 		[OPTIONS]: resolved,
 		markup({ content, filename }) {
-			if (filename !== undefined && !isIncluded(filename)) return;
+			if (filename !== undefined && !isIncluded(filename, resolved)) return;
 			const code = applyRule(content, resolved);
 			if (!code.hasChanged()) return;
 			return {
@@ -57,7 +56,16 @@ export function applyRule(content: string, options: ResolvedOptions): MagicStrin
 	return code;
 }
 
-/** SPEC §5.4. Patterns match the absolute path or the path relative to the working directory. */
+const filters = new WeakMap<ResolvedOptions, (filename: string) => boolean>();
+
+/** SPEC §5.4: whether the preprocessor applies the rule to this file. */
+export function isIncluded(filename: string, options: ResolvedOptions): boolean {
+	let filter = filters.get(options);
+	if (!filter) filters.set(options, (filter = fileFilter(options)));
+	return filter(filename);
+}
+
+/** Patterns match the absolute path or the path relative to the working directory. */
 function fileFilter({ include, exclude }: ResolvedOptions): (filename: string) => boolean {
 	const included = include.length ? picomatch(include, { dot: true }) : () => true;
 	const excluded = exclude.length ? picomatch(exclude, { dot: true }) : () => false;

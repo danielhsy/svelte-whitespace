@@ -8,16 +8,28 @@ import type { ResolvedOptions } from './options.js';
 
 const RAW_ELEMENTS = new Set(['pre', 'textarea', 'script', 'style']);
 
-export function outline(source: string, options: ResolvedOptions): string {
+export interface OutlineOptions {
+	/** Leave out whitespace next to block-level elements, which browsers don't display. */
+	ignoreBlockWhitespace?: boolean;
+}
+
+export function outline(
+	source: string,
+	options: ResolvedOptions,
+	{ ignoreBlockWhitespace = false }: OutlineOptions = {}
+): string {
 	const gaps = new Map(analyse(source, options).map((gap) => [gap.start, gap]));
+	const shown = (start: number) => {
+		const gap = gaps.get(start);
+		if (ignoreBlockWhitespace && (gap?.left === 'block' || gap?.right === 'block')) return false;
+		return gap?.renders !== '';
+	};
 	const root = parse(blankScriptsAndStyles(source), { modern: true });
 
 	const text = (node: AST.Text): string =>
 		source
 			.slice(node.start, node.end)
-			.replace(/[ \t\r\n]+/g, (whitespace, offset: number) =>
-				gaps.get(node.start + offset)?.renders === '' ? '' : ' '
-			);
+			.replace(/[ \t\r\n]+/g, (_, offset: number) => (shown(node.start + offset) ? ' ' : ''));
 
 	const nodes = (fragment: AST.Fragment): string => fragment.nodes.map(node).join('');
 

@@ -3,12 +3,21 @@
 	"version": "0.1.0",
 	"description": "A JSX-style whitespace formatter for Svelte, including a preprocessor and a Prettier plugin with configuration for behaviour",
 	"license": "Apache-2.0",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/danielhsy/svelte-whitespace.git"
+	},
+	"homepage": "https://github.com/danielhsy/svelte-whitespace#readme",
+	"bugs": {
+		"url": "https://github.com/danielhsy/svelte-whitespace/issues"
+	},
 	"type": "module",
 	"engines": {
 		"node": ">=22"
 	},
 	"files": [
-		"dist"
+		"dist",
+		"src"
 	],
 	"exports": {
 		".": {
@@ -25,6 +34,7 @@
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json",
+		"prepublishOnly": "npm run build",
 		"typecheck": "tsc --noEmit",
 		"test": "vitest run",
 		"test:watch": "vitest",

@@ -57,7 +57,8 @@ export const examples: Example[] = [
 	{
 		id: 7,
 		source: "<p>a{' '}\n\t<b>b</b></p>",
-		expected: both('<p>a <b>b</b></p>')
+		// Under display the line break is a space too, as in Svelte today.
+		expected: { jsx: '<p>a <b>b</b></p>', display: '<p>a  <b>b</b></p>' }
 	},
 	{
 		id: 8,

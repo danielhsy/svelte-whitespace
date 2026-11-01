@@ -1,5 +1,8 @@
+import { relative } from 'node:path';
+import MagicString from 'magic-string';
+import picomatch from 'picomatch';
 import type { PreprocessorGroup } from 'svelte/compiler';
-import { resolveOptions, type Options, type ResolvedOptions } from '../rule/index.js';
+import { analyse, resolveOptions, type Options, type ResolvedOptions } from '../rule/index.js';
 
 export type { Behaviour, Kind, Options, PresetName } from '../rule/index.js';
 
@@ -17,12 +20,49 @@ export interface SvelteWhitespacePreprocessor extends PreprocessorGroup {
 
 export function svelteWhitespace(options: Options = {}): SvelteWhitespacePreprocessor {
 	const resolved = resolveOptions(options);
+	const isIncluded = fileFilter(resolved);
+
 	return {
 		name: 'svelte-whitespace',
 		[OPTIONS]: resolved,
-		markup() {
-			// Not implemented yet: returning nothing leaves the markup unchanged.
-			return undefined;
+		markup({ content, filename }) {
+			if (filename !== undefined && !isIncluded(filename)) return;
+			const code = applyRule(content, resolved);
+			if (!code.hasChanged()) return;
+			return {
+				code: code.toString(),
+				map: code.generateMap({
+					hires: true,
+					includeContent: true,
+					...(filename === undefined ? {} : { source: filename })
+				})
+			};
 		}
+	};
+}
+
+/**
+ * Rewrites each gap so that Svelte's own whitespace handling renders what the rule says
+ * (SPEC §9). Svelte trims whitespace at edges, so a space kept there is written as `{' '}`.
+ */
+export function applyRule(content: string, options: ResolvedOptions): MagicString {
+	const code = new MagicString(content);
+	for (const gap of analyse(content, options)) {
+		if (gap.passthrough) continue;
+		const atEdge = gap.left === 'edges' || gap.right === 'edges';
+		if (gap.renders === '') code.remove(gap.start, gap.end);
+		else if (atEdge) code.overwrite(gap.start, gap.end, "{' '}");
+		else if (content.slice(gap.start, gap.end) !== ' ') code.overwrite(gap.start, gap.end, ' ');
+	}
+	return code;
+}
+
+/** SPEC §5.4. Patterns match the absolute path or the path relative to the working directory. */
+function fileFilter({ include, exclude }: ResolvedOptions): (filename: string) => boolean {
+	const included = include.length ? picomatch(include, { dot: true }) : () => true;
+	const excluded = exclude.length ? picomatch(exclude, { dot: true }) : () => false;
+	return (filename) => {
+		const paths = [filename, relative(process.cwd(), filename)];
+		return paths.some((path) => included(path)) && !paths.some((path) => excluded(path));
 	};
 }

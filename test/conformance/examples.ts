@@ -67,8 +67,8 @@ export const examples: Example[] = [
 	},
 	{
 		id: 9,
-		source: '<pre>\n  x\n</pre>',
-		expected: both('<pre>\n  x\n</pre>')
+		source: '<pre>\n\tx\n</pre>',
+		expected: both('<pre>\n\tx\n</pre>')
 	},
 	{
 		id: 10,

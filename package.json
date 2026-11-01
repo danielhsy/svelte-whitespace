@@ -1,7 +1,6 @@
 {
 	"name": "svelte-whitespace",
-	"version": "0.0.0",
-	"private": true,
+	"version": "0.1.0",
 	"description": "A JSX-style whitespace formatter for Svelte, including a preprocessor and a Prettier plugin with configuration for behaviour",
 	"license": "Apache-2.0",
 	"type": "module",
@@ -29,8 +28,9 @@
 		"typecheck": "tsc --noEmit",
 		"test": "vitest run",
 		"test:watch": "vitest",
-		"format": "prettier --write .",
-		"format:check": "prettier --check ."
+		"format": "prettier --write . --ignore-path .gitignore --ignore-path .prettierignore --ignore-path .git/info/exclude",
+		"format:check": "prettier --check . --ignore-path .gitignore --ignore-path .prettierignore --ignore-path .git/info/exclude",
+		"docs": "UPDATE_DOCS=1 vitest run test/docs"
 	},
 	"peerDependencies": {
 		"prettier": "^3.0.0",
